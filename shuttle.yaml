@@ -3,3 +3,4 @@ plan: false
 vars:
   service: payments-plugin-hikashop
   squad: juno
+  domain: webshop-payments
