@@ -5,14 +5,39 @@ defined('_JEXEC') or die('Restricted access');
 include_once('vendor/autoload.php');
 
 use Joomla\CMS\Factory;
+use Joomla\CMS\Version;
 
+use Lunar\Lunar;
+use Lunar\Exception\ApiConnection;
 
 /**
  * plgHikashoppaymentLunar class
  */
 class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 {
-    const PLUGIN_VERSION = '1.0.0';
+	const REMOTE_URL = 'https://pay.lunar.money/?id=';
+    const TEST_REMOTE_URL = 'https://hosted-checkout-git-develop-lunar-app.vercel.app/?id=';
+	
+	const CARD_METHOD = 'card';
+	const MOBILEPAY_METHOD = 'mobilePay';
+
+    protected string $paymentMethodCode;
+
+    /** @var \Joomla\CMS\Application\CMSApplicationInterface $app */
+	protected $app;
+
+	protected $method;
+	protected $apiClient;
+	protected $currencyId;
+	protected $currencyCode;
+	protected $totalAmount;
+	protected $emailCurrency;
+	protected $check;
+	protected $args = [];
+	protected $errorMessage = null;
+	protected $intentIdKey = '_lunar_intent_id';
+	protected $testMode = false;
+	protected $isMobilePay = false;
 
     public $name = 'lunar';
     public $multiple = true;
@@ -21,102 +46,144 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     {
         parent::__construct($subject, $config);
 
+        $this->app = Factory::getApplication();
+		$this->testMode = !!$this->app->input->cookie->get('lunar_testmode'); // same with !!$_COOKIE['lunar_testmode']
+
         $lang = Factory::getLanguage();
         $plugins = "plg_hikashoppayment_lunar";
         $base_dir = JPATH_ADMINISTRATOR;
         $lang->load($plugins, $base_dir, $lang->getTag(), true);
+
+        if ($this->app->isClient('administrator')) {
+            // is admin
+		}
+        $this->paymentMethodCode = 'card'; // temporary
     }
 
-    public function onPaymentConfiguration(&$element)
-    {
-        parent::onPaymentConfiguration($element);
-    }
-
+    /** 
+     * 
+     */
     public function onAfterOrderConfirm(&$order, &$methods, $method_id)
     {
         parent::onAfterOrderConfirm($order, $methods, $method_id);
 
-        $input = Factory::getApplication()->input;
-        $ip    = $input->server->get('REMOTE_ADDR');
-
-        $method = &$methods[$method_id];
-        $this->modifyOrder($order->order_id, $method->payment_params->order_status, false, false);
-
-        $config = Factory::getConfig();
-
-        $price = round($order->cart->full_total->prices[0]->price_value_with_tax, (int)$this->currency->currency_locale['int_frac_digits']);
-        if (strpos($price, '.')) {
-            $price = rtrim(rtrim($price, '0'), '.');
-        }
-
-        $customs = array();
-        $products = hikashop_get('class.product');
-        foreach ($order->cart->cart_products as $item) :
-            $product = $products->get($item->product_id);
-            $product->product_name = str_replace(array('"', "'"), array('\"', "\'"), $product->product_name);
-            $customs[] = "{ product: '$product->product_name ($product->product_code)', quantity: $item->cart_product_quantity },";
-        endforeach;
-
-        (new JVersion())->getShortVersion();
-        hikashop_config()->get('version');
-
-        $vars = array(
-            "test_mode" => $this->payment_params->test_mode,
-            "currency" => $this->currency->currency_code,
-            "exponent" => get_lunar_currency($this->currency->currency_code)['exponent'],
-            "amount" => $price,
-            "lunar_amount" => get_lunar_amount($price, $this->currency->currency_code),
-            "public_key" => $method->payment_params->public_key,
-            "order_id" => $order->order_id,
-            "order_number" => $order->order_number,
-            "method_id" => $method_id,
-            "custom" => implode("\n", $customs),
-            "sitename" => $config->get("sitename"),
-            "customer_name" => $order->cart->billing_address->address_firstname . " " . $order->cart->billing_address->address_lastname,
-            "customer_email" => $this->user->user_email,
-            "customer_phone" => $order->cart->billing_address->address_telephone,
-            "customer_address" => $order->cart->shipping_address->address_street . " " . $order->cart->shipping_address->address_city . " " . $order->cart->shipping_address->address_post_code . " " . $order->cart->shipping_address->address_state->zone_name . " " . $order->cart->shipping_address->address_state->zone_code_2,
-            "customer_ip" => $ip,
-            "history_url" => $this->orderHistoryURL(),
-            "lunar_plugin_version" => self::PLUGIN_VERSION,
+        $price = round(
+            $order->cart->full_total->prices[0]->price_value_with_tax,
+            (int) $this->currency->currency_locale['int_frac_digits']
         );
+        $this->totalAmount = (string) $price;
+        $this->currencyCode = $this->currency->currency_code;
 
-        $this->vars = $vars;
+        $this->method = $methods[$method_id];
 
-        // redirect 
+        $this->modifyOrder($order->order_id, $this->method->payment_params->order_status, false, false);
 
-        // return $this->showPage('end');
+        $this->setArgs($order);
+
+        $this->apiClient = new Lunar($this->method->app_key, null, $this->testMode);
+        $paymentIntentId = $this->apiClient->payments()->create($this->args);
+
+        
+		$this->app->redirect(($this->testMode ? self::TEST_REMOTE_URL : self::REMOTE_URL) . $paymentIntentId, 302);
+
+
+        // $price = round($order->cart->full_total->prices[0]->price_value_with_tax, (int)$this->currency->currency_locale['int_frac_digits']);
+        // if (strpos($price, '.')) {
+        //     $price = rtrim(rtrim($price, '0'), '.');
+        // }
+
+        // $customs = array();
+        // $products = hikashop_get('class.product');
+        // foreach ($order->cart->cart_products as $item) :
+        //     $product = $products->get($item->product_id);
+        //     $product->product_name = str_replace(array('"', "'"), array('\"', "\'"), $product->product_name);
+        //     $customs[] = "{ product: '$product->product_name ($product->product_code)', quantity: $item->cart_product_quantity },";
+        // endforeach;
+        
+
+        // $vars = array(
+        //     "order_id" => $order->order_id,
+        //     "order_number" => $order->order_number,
+        //     "method_id" => $method_id,
+        //     "custom" => implode("\n", $customs),
+        //     "sitename" => ,
+
+        //     // "history_url" => $this->orderHistoryURL(),
+        // );
+
+
+ 
     }
 
-    public function getPaymentDefaultValues(&$element)
+
+    /**
+     * SET ARGS
+     */
+    private function setArgs($order)
     {
-        $element->payment_name = JText::_('HIKASHOP_LUNAR_NAME');
-        $element->payment_description = JText::_('HIKASHOP_LUNAR_DESCRIPTION');
-        $element->payment_images = 'VISA,MASTERCARD';
+        $this->args = [
+            'integration' => [
+                'key' => $this->method->public_key,
+                'name' => $this->method->shop_title ?? $this->app->get('sitename'),
+                'logo' => $this->method->logo_url,
+            ],
+            'amount' => [
+                'currency' => $this->currencyCode,
+                'decimal' => $this->totalAmount,
+            ],
+            'custom' => [
+                'orderId' => $order->id,
+                'products' => $this->getFormattedProducts(),
+                'customer' => [
+                    'name' => $order->cart->billing_address->address_firstname . ' ' . $order->cart->billing_address->address_lastname,
+                    'email' => $this->user->user_email,
+                    'telephone' => $order->cart->billing_address->address_telephone,
+                    'address' => $order->cart->billing_address->address_street . ' ' . 
+                        $order->cart->billing_address->address_city . ' ' . 
+                        $order->cart->billing_address->address_post_code . ' ' . 
+                        $order->cart->billing_address->address_state->zone_name . ' ' . 
+                        $order->cart->billing_address->address_state->zone_code_2,
+                    'ip' => $this->app->input->server->get('REMOTE_ADDR'), // @TODO check hikashop_getIP() compatibility
+                ],
+                'platform' => [
+                    'name' => 'Joomla',
+                    'version' => (new Version())->getShortVersion(),
+                ],
+                'ecommerce' => [
+                    'name' => 'HikaShop',
+                    'version' => hikashop_config()->get('version'),
+                ],
+                'lunarPluginVersion' => $this->getPluginVersion(),
+            ],
+            'redirectUrl' => JURI::root()
+							. 'option=com_hikashop&ctrl=checkout&task=notify'
+                            . '&notif_payment=lunar&tmpl=component&lang=en' // get lang code 
+							. '&pm=' . $this->method->payment_params->payment_method,
+            'preferredPaymentMethod' => $this->paymentMethodCode,
+        ];
 
-        $element->payment_params->order_status = 'pending';
-        $element->payment_params->confirmed_status = 'confirmed';
-    }
-
-    public function onPaymentConfigurationSave(&$element)
-    {
-        // @TODO reactivate key validation when available
-
-        parent::onPaymentConfigurationSave($element);
-        return true;
+        if ($this->isMobilePay) {
+            $this->args['mobilePayConfiguration'] = [
+                'configurationID' => $this->method->configuration_id,
+                'logo' => $this->method->logo_url,
+            ];
+        }
+	
+        if ($this->testMode) {
+            $this->args['test'] = $this->getTestObject();
+        }
     }
 
     public function onPaymentNotification(&$statuses)
     {
-        switch (Factory::getApplication()->input->get("act")) {
-            case "savingTransaction":
-                $this->savingTransaction();
+        switch (Factory::getApplication()->input->get("pm")) {
+            case "card":
+                // $this->savingTransaction();
                 break;
         }
 
         return true;
     }
-
 
     public function savingTransaction()
     {
@@ -180,11 +247,11 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             // capture payment
             if ($_REQUEST['amount'] > 0) {
                 $data        = array(
-                    'amount'   => get_lunar_amount($_REQUEST['amount'], $_REQUEST['currency']),
+                    'amount'   => (string) $_REQUEST['amount'],
                     'currency' => $_REQUEST['currency']
                 );
-                \Lunar\Client::setKey($this->payment_params->private_key);
-                $response = \Lunar\Transaction::capture($_REQUEST['txnid'], $data);
+
+                $response = $this->apiClient->payments()->capture($_REQUEST['txnid'], $data);
 
                 if ($response['transaction']['capturedAmount'] > 0) :
                     // update status to capture
@@ -196,6 +263,18 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         }
     }
 
+    /** */
+    private function getPaymentIntentCookie()
+    {
+        return $this->app->input->cookie->get($this->intentIdKey);
+    }
+
+    /** */
+    private function setPaymentIntentCookie($paymentIntentId = null, $expire = 0)
+    {
+        $this->app->input->cookie->set($this->intentIdKey, $paymentIntentId, $expire, '/', '', false, true);
+    }
+    
     public function orderHistoryURL()
     {
         $db = Factory::getDBO();
@@ -207,4 +286,82 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             return JRoute::_('index.php?option=com_hikashop&view=user&layout=cpanel');
         }
     }
+
+    public function getPaymentDefaultValues(&$element)
+    {
+        $element->payment_name = JText::_('HIKASHOP_LUNAR_NAME');
+        $element->payment_description = JText::_('HIKASHOP_LUNAR_CARD_DESCRIPTION');
+        $element->payment_images = 'VISA,MASTERCARD';
+
+        $element->payment_params->payment_method = 'card';
+        $element->payment_params->capture_mode = 'delayed';
+
+        $element->payment_params->order_status = 'pending';
+        $element->payment_params->confirmed_status = 'confirmed';
+    }
+
+    public function onPaymentConfigurationSave(&$element)
+    {
+        // @TODO reactivate key validation when available
+
+        parent::onPaymentConfigurationSave($element);
+        return true;
+    }
+
+        /**
+     * 
+     */
+    private function getFormattedProducts()
+    {
+		$products_array = [];
+        // foreach ($this->cart->products as $product) {
+		// 	$products_array[] = [
+		// 		'ID' => $product->id,
+		// 		'name' => $product->product_name,
+		// 		'quantity' => $product->quantity,
+        //     ];
+		// }
+        return $products_array;
+    }
+
+    /**
+     *
+     */
+    private function getTestObject(): array
+    {
+        return [
+            "card"        => [
+                "scheme"  => "supported",
+                "code"    => "valid",
+                "status"  => "valid",
+                "limit"   => [
+                    "decimal"  => "25000.99",
+                    "currency" => $this->currencyCode,
+                    
+                ],
+                "balance" => [
+                    "decimal"  => "25000.99",
+                    "currency" => $this->currencyCode,
+                    
+                ]
+            ],
+            "fingerprint" => "success",
+            "tds"         => array(
+                "fingerprint" => "success",
+                "challenge"   => true,
+                "status"      => "authenticated"
+            ),
+        ];
+    }
+
+    /**
+	 * @return string
+	 */
+	protected function getPluginVersion() 
+    {
+		$xmlStr = file_get_contents($this->_xmlFile);
+		$xmlObj = simplexml_load_string($xmlStr);
+		return (string) $xmlObj->version;
+	}
+
 }
