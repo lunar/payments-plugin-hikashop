@@ -1,17 +1,15 @@
 {
-  "name": "lunar/plugin-hikashop",
-  "description": "Lunar integration with payment gateway Joomla | Hikashop",
+  "name": "lunar/payments-plugin-hikashop",
+  "description": "Lunar Online Payments for HikaShop",
   "type": "hikashop-module",
-  "license": [
-      "GPL-3.0-or-later"
-  ],
+  "license": "MIT",
   "authors": [
     {
-      "name": "Genuineq",
-      "email": "office@genuineq.com"
+      "name": "Lunar",
+      "email": "support@lunar.app"
     }
   ],
   "require": {
-    "paylike/php-api": "^1.0.5"
+    "lunar/payments-api-sdk": "^1.0"
   }
 }

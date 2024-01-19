@@ -1,31 +1,29 @@
 <?php return array(
     'root' => array(
-        'pretty_version' => 'dev-master',
-        'version' => 'dev-master',
-        'type' => 'hikashop-module',
+        'name' => 'lunar/plugin-thirthybees',
+        'reference' => NULL,
+        'type' => 'thirthybees-module',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'reference' => 'b465306be0c636c9462416ec6d7ed63991a8d6b4',
-        'name' => 'paylike/module-paylike',
         'dev' => true,
     ),
     'versions' => array(
-        'paylike/module-paylike' => array(
+        'lunar/payments-api-sdk' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'type' => 'hikashop-module',
-            'install_path' => __DIR__ . '/../../',
-            'aliases' => array(),
-            'reference' => 'b465306be0c636c9462416ec6d7ed63991a8d6b4',
+            'reference' => '36436f5181dbeb0fdb3bd77b6c040c7a7abcc366',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../lunar/payments-api-sdk',
+            'aliases' => array(
+                0 => '9999999-dev',
+            ),
             'dev_requirement' => false,
         ),
-        'paylike/php-api' => array(
-            'pretty_version' => '1.0.5',
-            'version' => '1.0.5.0',
-            'type' => 'library',
-            'install_path' => __DIR__ . '/../paylike/php-api',
+        'lunar/plugin-thirthybees' => array(
+            'reference' => NULL,
+            'type' => 'thirthybees-module',
+            'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
-            'reference' => '85cd1fd04f98afd68b628735aad94add2f4c0223',
             'dev_requirement' => false,
         ),
     ),
