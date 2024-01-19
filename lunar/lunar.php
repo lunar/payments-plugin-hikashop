@@ -108,13 +108,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 
     public function onPaymentNotification(&$statuses)
     {
-        /** @var \Joomla\CMS\Application\CMSApplication $app */
-        $app = Factory::getApplication();
-        $input = $app->input;
-        /** Get act(ion) input value. */
-        $act = $input->get("act");
-
-        switch ($act) {
+        switch (Factory::getApplication()->input->get("act")) {
             case "savingTransaction":
                 $this->savingTransaction();
                 break;
@@ -136,7 +130,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             'created_on',
             'status',
             'currency_code',
-            'txnid',
+            'transaction_id',
             'payment_method'
         );
 
@@ -148,7 +142,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             $db->quote(date('Y-m-d h:i:s')),
             $db->quote('created'),
             $db->quote($_REQUEST['currency']),
-            $db->quote($_REQUEST['txnid']),
+            $db->quote($_REQUEST['transaction_id']),
             $db->quote("Lunar")
         );
 
