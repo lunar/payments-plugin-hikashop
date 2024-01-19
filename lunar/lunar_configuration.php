@@ -6,13 +6,33 @@ defined('_JEXEC') or die('Restricted access');
 
 <tr>
 	<td class="key">
-		<label for="data[payment][payment_params][private_key]">
-			<?php echo JText::_( 'HIKASHOP_PRIVATE_KEY' ); ?>
+		<label for="data[payment][payment_params][payment_method]">
+			<?php echo JText::_( 'HIKASHOP_PAYMENT_METHOD' ); ?>
 		</label>
 	</td>
 	<td>
-		<input type="text" name="data[payment][payment_params][private_key]" 
-				value="<?php echo $this->escape(@$this->element->payment_params->private_key); ?>" />
+	<?php 
+		echo JHTML::_('hikaselect.radiolist',  
+			[
+				JHTML::_('select.option', 'card', 'Card' ),
+				JHTML::_('select.option', 'mobilePay', 'MobilePay' ),
+			],
+			"data[payment][payment_params][payment_method]", '', 'value', 'text',
+			@$this->element->payment_params->payment_method
+		);
+		?>
+	</td>
+</tr>
+
+<tr>
+	<td class="key">
+		<label for="data[payment][payment_params][app_key]">
+			<?php echo JText::_( 'HIKASHOP_APP_KEY' ); ?>
+		</label>
+	</td>
+	<td>
+		<input type="text" name="data[payment][payment_params][app_key]" 
+				value="<?php echo $this->escape(@$this->element->payment_params->app_key); ?>" />
 	</td>
 </tr>
 
@@ -86,7 +106,7 @@ defined('_JEXEC') or die('Restricted access');
 					JHTML::_('select.option', 'instant', 'Instant' ),
 				],
 				"data[payment][payment_params][capture_mode]", '', 'value', 'text',
-				@$this->element->payment_params->capture_mode ? $this->element->payment_params->capture_mode : 'delayed'
+				@$this->element->payment_params->capture_mode
 			);
 		?>
 	</td>
