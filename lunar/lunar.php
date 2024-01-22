@@ -20,6 +20,10 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     
     const CARD_METHOD = 'card';
     const MOBILEPAY_METHOD = 'mobilePay';
+    const LUNAR_METHODS = [
+        self::CARD_METHOD,
+        self::MOBILEPAY_METHOD,
+    ];
 
     protected string $paymentMethodCode;
 
@@ -157,8 +161,9 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             ],
             'redirectUrl' => JURI::root()
                             . '?option=com_hikashop&ctrl=checkout&task=notify'
-                            . '&notif_payment=lunar&tmpl=component&lang=en' // get lang code 
-                            . '&pm=' . $this->method->payment_id,
+                            . '&notif_payment=lunar&tmpl=component&lang=' . $this->app->getLanguage()->sef
+                            . '&order_id=' . $order->order_id
+                            . '&method=' . $this->getConfig('payment_method'),
             'preferredPaymentMethod' => $this->getConfig('payment_method'),
         ];
 
@@ -176,13 +181,32 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 
     public function onPaymentNotification(&$statuses)
     {
-        switch (Factory::getApplication()->input->get("pm")) {
-            case "card":
-                // $this->savingTransaction();
-                break;
+        $method = $this->app->input->get("method");
+        $orderId = $this->app->input->get("method");
+
+        $dbOrder = $this->getOrder((int) $orderId);
+        $this->loadPaymentParams($dbOrder);
+        
+        if(empty($dbOrder)) {
+            $this->writeToLog('Lunar: could not load any order with ID: ' . $orderId);
+            return $this->redirectToCheckout();
+        }
+
+        $this->loadOrderData($dbOrder);
+
+
+
+
+        if (in_array($this->getConfig('payment_method'), self::LUNAR_METHODS)) {
+            // $this->savingTransaction();
         }
 
         return true;
+    }
+
+    public function redirectToCheckout()
+    {
+        $this->redirect('/');
     }
 
     public function savingTransaction()
@@ -234,17 +258,17 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         $order = $this->getOrder($_REQUEST['order_id']);
         $this->loadPaymentParams($order);
 
-        $this->modifyOrder($_REQUEST['order_id'], $this->payment_params->confirmed_status, $history, $email);
+        $this->modifyOrder($_REQUEST['order_id'], $this->getConfig('confirmed_status'), $history, $email);
 
         // try to clear cart
-        $class = hikashop_get('class.cart');
-        $class->cleanCartFromSession();
+        $cart = hikashop_get('class.cart');
+        $cart->cleanCartFromSession();
 
-        if ($this->payment_params->capture_mode == "delayed") {
+        if ($this->getConfig('capture_mode') == "delayed") {
             return;
         }
 
-        if ($order->order_status != $this->payment_params->confirmed_status) {
+        if ($order->order_status != $this->getConfig('confirmed_status')) {
             // capture payment
             if ($_REQUEST['amount'] > 0) {
                 $data        = array(
