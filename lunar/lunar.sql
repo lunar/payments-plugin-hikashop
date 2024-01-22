@@ -4,6 +4,7 @@ CREATE TABLE `#__hikashop_payment_plg_lunar` (
   `order_number` char(64) DEFAULT NULL,
   `paymentmethod_id` mediumint(1) UNSIGNED DEFAULT NULL,
   `payment_name` varchar(5000) DEFAULT NULL,
+  `payment_method` varchar(50) DEFAULT NULL,
   `transaction_id` varchar(29) DEFAULT NULL,
   `amount` decimal(15,5) NOT NULL DEFAULT '0.00000',
   `currency_code` varchar(225) DEFAULT NULL,

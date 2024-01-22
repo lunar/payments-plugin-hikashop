@@ -8,7 +8,7 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Version;
 
 use Lunar\Lunar;
-use Lunar\Exception\ApiConnection;
+use Lunar\Exception\ApiException;
 
 /**
  * plgHikashoppaymentLunar class
@@ -30,15 +30,10 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     /** @var \Joomla\CMS\Application\CMSApplicationInterface $app */
     protected $app;
 
-    protected $method;
     protected $apiClient;
-    protected $currencyId;
     protected $currencyCode;
     protected $totalAmount;
-    protected $emailCurrency;
-    protected $check;
     protected $args = [];
-    protected $errorMessage = null;
     protected $intentIdKey = '_lunar_intent_id';
     protected $testMode = false;
     protected $isMobilePay = false;
@@ -50,18 +45,14 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     {
         parent::__construct($subject, $config);
 
-        $this->app = Factory::getApplication();
         $this->testMode = !!$this->app->input->cookie->get('lunar_testmode'); // same with !!$_COOKIE['lunar_testmode']
 
-        $lang = Factory::getLanguage();
-        $plugins = "plg_hikashoppayment_lunar";
-        $base_dir = JPATH_ADMINISTRATOR;
-        $lang->load($plugins, $base_dir, $lang->getTag(), true);
+        $lang = $this->app->getLanguage();
+        $lang->load('plg_hikashoppayment_lunar', JPATH_ADMINISTRATOR, $lang->getTag(), true);
 
         if ($this->app->isClient('administrator')) {
             $this->maybeAddAdminScript();
         }
-        // $this->paymentMethodCode = 'card'; // temporary
     }
 
     /** 
@@ -72,60 +63,64 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         parent::onAfterOrderConfirm($order, $methods, $method_id);
 
         $price = round(
-            $order->cart->full_total->prices[0]->price_value_with_tax,
+            $this->order->cart->full_total->prices[0]->price_value_with_tax,
             (int) $this->currency->currency_locale['int_frac_digits']
         );
         $this->totalAmount = (string) $price;
         $this->currencyCode = $this->currency->currency_code;
 
-        $this->method = $methods[$method_id];
-
-        $this->modifyOrder($order->order_id, $this->getConfig('order_status'), false, false);
-
-        $this->setArgs($order);
+        $this->setArgs($this->order);
 
         $this->apiClient = new Lunar($this->getConfig('app_key'), null, $this->testMode);
         $paymentIntentId = $this->apiClient->payments()->create($this->args);
 
+        $this->modifyOrder(
+            $this->order->order_id,
+            $this->getConfig('order_status'),
+            null, null,
+            (object) [
+                $this->intentIdKey => $paymentIntentId
+            ]
+        );
         
         $this->app->redirect(($this->testMode ? self::TEST_REMOTE_URL : self::REMOTE_URL) . $paymentIntentId, 302);
 
-
-        // $price = round($order->cart->full_total->prices[0]->price_value_with_tax, (int)$this->currency->currency_locale['int_frac_digits']);
-        // if (strpos($price, '.')) {
-        //     $price = rtrim(rtrim($price, '0'), '.');
-        // }
-
-        // $customs = array();
-        // $products = hikashop_get('class.product');
-        // foreach ($order->cart->cart_products as $item) :
-        //     $product = $products->get($item->product_id);
-        //     $product->product_name = str_replace(array('"', "'"), array('\"', "\'"), $product->product_name);
-        //     $customs[] = "{ product: '$product->product_name ($product->product_code)', quantity: $item->cart_product_quantity },";
-        // endforeach;
-        
-
-        // $vars = array(
-        //     "order_id" => $order->order_id,
-        //     "order_number" => $order->order_number,
-        //     "method_id" => $method_id,
-        //     "custom" => implode("\n", $customs),
-        //     "sitename" => ,
-
-        //     // "history_url" => $this->orderHistoryURL(),
-        // );
-
-
- 
+        //$order_history = $this->orderHistoryURL(), // $this->getOrderUrl();
     }
 
+    /**
+     * 
+     */
+    public function onPaymentNotification(&$statuses)
+    {
+        $method = $this->app->input->get("method");
+        $orderId = $this->app->input->get("order_id");
+
+        $this->order = $dbOrder = $this->getOrder((int) $orderId);
+        $this->loadPaymentParams($dbOrder);
+        
+        if(empty($dbOrder)) {
+            $errorMessage = 'Lunar: could not load any order with ID: ' . $orderId;
+            $this->writeToLog($errorMessage);
+            return $this->redirectBackWithNotification($errorMessage);
+        }
+
+        $this->loadOrderData($dbOrder);
+
+        if (in_array($this->getConfig('payment_method'), self::LUNAR_METHODS)) {
+            $this->saveLunarTransaction();
+        }
+
+        return true;
+    }
 
     /**
      * SET ARGS
      */
-    private function setArgs($order)
+    private function setArgs()
     {
-        $billingInfo = $order->cart->billing_address;
+        // order is set in parent::onAfterOrderConfirm
+        $billingInfo = $this->order->cart->billing_address;
 
         $this->args = [
             'integration' => [
@@ -138,7 +133,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
                 'decimal' => $this->totalAmount,
             ],
             'custom' => [
-                'orderId' => $order->order_id,
+                'orderId' => $this->order->order_id,
                 'products' => $this->getFormattedProducts(),
                 'customer' => [
                     'name' => $billingInfo->address_firstname . ' ' . $billingInfo->address_lastname,
@@ -161,8 +156,8 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             ],
             'redirectUrl' => JURI::root()
                             . '?option=com_hikashop&ctrl=checkout&task=notify'
-                            . '&notif_payment=lunar&tmpl=component&lang=' . $this->app->getLanguage()->sef
-                            . '&order_id=' . $order->order_id
+                            . '&notif_payment=lunar&tmpl=component&lang=' . $this->locale
+                            . '&order_id=' . $this->order->order_id
                             . '&method=' . $this->getConfig('payment_method'),
             'preferredPaymentMethod' => $this->getConfig('payment_method'),
         ];
@@ -170,46 +165,25 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         if ($this->isMobilePay) {
             $this->args['mobilePayConfiguration'] = [
                 'configurationID' => $this->getConfig('configuration_id'),
-                'logo' => $this->method->logo_url,
+                'logo' => $this->getConfig('logo_url'),
             ];
         }
-    
+
         if ($this->testMode) {
             $this->args['test'] = $this->getTestObject();
         }
     }
-
-    public function onPaymentNotification(&$statuses)
+    
+    /** */
+    private function redirectBackWithNotification($errorMessage, $redirectUrl = null)
     {
-        $method = $this->app->input->get("method");
-        $orderId = $this->app->input->get("method");
+		$redirectUrl = $redirectUrl ?? Route::_('index.php?checkout');
 
-        $dbOrder = $this->getOrder((int) $orderId);
-        $this->loadPaymentParams($dbOrder);
-        
-        if(empty($dbOrder)) {
-            $this->writeToLog('Lunar: could not load any order with ID: ' . $orderId);
-            return $this->redirectToCheckout();
-        }
-
-        $this->loadOrderData($dbOrder);
-
-
-
-
-        if (in_array($this->getConfig('payment_method'), self::LUNAR_METHODS)) {
-            // $this->savingTransaction();
-        }
-
-        return true;
+		$this->app->enqueueMessage($errorMessage, 'error');
+		$this->app->redirect($redirectUrl, 302);
     }
 
-    public function redirectToCheckout()
-    {
-        $this->redirect('/');
-    }
-
-    public function savingTransaction()
+    public function saveLunarTransaction()
     {
         $db = Factory::getDbo();
         $query = $db->getQuery(true);
@@ -217,25 +191,28 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             'order_id',
             'order_number',
             'paymentmethod_id',
+            'payment_name',
+            'payment_method',
             'amount',
-            'created_on',
             'status',
             'currency_code',
             'transaction_id',
-            'payment_method'
         );
 
-        $values = array(
-            $db->quote($_REQUEST['order_id']),
-            $db->quote($_REQUEST['order_number']),
-            $db->quote($_REQUEST['method_id']),
-            $db->quote($_REQUEST['amount']),
-            $db->quote(date('Y-m-d h:i:s')),
+       $order_id = $this->order->order_id;
+        $order_full_price = $this->order->order_full_price;
+        $payment_intent_id = $this->order->order_payment_params->{$this->intentIdKey} ?? null;
+        $values = [
+            $db->quote($order_id),
+            $db->quote($this->order->order_number),
+            $db->quote($this->plugin_data->payment_id),
+            $db->quote($this->plugin_data->payment_name),
+            $db->quote($this->getConfig('payment_method')),
+            $db->quote($order_full_price),
             $db->quote('created'),
-            $db->quote($_REQUEST['currency']),
-            $db->quote($_REQUEST['transaction_id']),
-            $db->quote("Lunar")
-        );
+            $db->quote(unserialize($this->order->order_currency_info)->currency_code),
+            $db->quote($payment_intent_id),
+        ];
 
         $query
             ->insert($db->quoteName('#__hikashop_payment_plg_lunar'))
@@ -247,70 +224,66 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 
         $history = (object) [
             'notified' => 1,
-            'amount' => $_REQUEST['amount'],
+            'amount' => $order_full_price,
             'data' => ob_get_clean(),
         ];
         $email = (object) [
-            'subject' => JText::sprintf('PAYMENT_NOTIFICATION_FOR_ORDER', $this->method->payment_name, 'Confirmed', $_REQUEST['order_number']),
-            'body' => str_replace('<br/>', "\r\n", JText::sprintf('PAYMENT_NOTIFICATION_STATUS', $this->method->payment_name, 'Confirmed')) . ' ' . JText::sprintf('ORDER_STATUS_CHANGED', 'Confirmed') . "\r\n\r\n",
+            'subject' => JText::sprintf('PAYMENT_NOTIFICATION_FOR_ORDER', $this->plugin_data->payment_name, 'Confirmed', $this->order->order_number),
+            'body' => str_replace('<br/>', "\r\n", JText::sprintf('PAYMENT_NOTIFICATION_STATUS', $this->plugin_data->payment_name, 'Confirmed')) . ' ' . JText::sprintf('ORDER_STATUS_CHANGED', 'Confirmed') . "\r\n\r\n",
         ];
 
-        $order = $this->getOrder($_REQUEST['order_id']);
+        $order = $this->getOrder($order_id);
         $this->loadPaymentParams($order);
 
-        $this->modifyOrder($_REQUEST['order_id'], $this->getConfig('confirmed_status'), $history, $email);
+        $this->modifyOrder($order_id, $this->getConfig('confirmed_status'), $history, $email);
 
         // try to clear cart
         $cart = hikashop_get('class.cart');
         $cart->cleanCartFromSession();
 
-        if ($this->getConfig('capture_mode') == "delayed") {
-            return;
-        }
+        if ('instant' === $this->getConfig('capture_mode')) {
+            if ($order->order_status != $this->getConfig('confirmed_status')) {
+                file_put_contents(dirname(__FILE__) . "/zzz.log", json_encode(__METHOD__.'-->'.__LINE__, JSON_PRETTY_PRINT) . PHP_EOL, FILE_APPEND);	
+                // try {
+                //     $apiResponse = $this->apiClient->payments()->capture($payment_intent_id, [
+                //         'amount' => [
+                //             'amount'   => (string) $order_full_price,
+                //             'currency' => $this->currency->currency_code
+                //         ]
+                //     ]);
+                // } catch (ApiException $e) {
+                //     $this->redirectBackWithNotification(JText::_('LUNAR_ERROR_CAPTURE_EXCEPTION'));
+                // }
 
-        if ($order->order_status != $this->getConfig('confirmed_status')) {
-            // capture payment
-            if ($_REQUEST['amount'] > 0) {
-                $data        = array(
-                    'amount'   => (string) $_REQUEST['amount'],
-                    'currency' => $_REQUEST['currency']
-                );
-
-                $response = $this->apiClient->payments()->capture($_REQUEST['txnid'], $data);
-
-                if ($response['transaction']['capturedAmount'] > 0) :
+                // if ('completed' === $apiResponse['captureStatus']) {
                     // update status to capture
-                    $sql = "update #__hikashop_payment_plg_lunar set status='captured' where order_id='$order->order_id'";
-                    $db->setQuery($sql);
-                    $db->execute();
-                endif;
+                    // $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='captured' WHERE order_id='".$order->order_id."'";
+                    // $db->setQuery($sql);
+                    // $db->execute();
+                // }
             }
         }
+
+        // $checkoutHelper = hikashopCheckoutHelper::get();
+        // $cart = $checkoutHelper->getCart($reset);
+        // $completeUrl = $checkoutHelper->completeLink('cid='.($step + 1).$url_cart_param, false, true, false, $checkout_itemid);
+
+        $completeUrl = hikashop_completeLink('checkout&task=confirm&Itemid='.$order->order_id, false, true);
+
+        return $this->app->redirect($completeUrl);
     }
 
-    /** */
-    private function getPaymentIntentCookie()
-    {
-        return $this->app->input->cookie->get($this->intentIdKey);
-    }
-
-    /** */
-    private function setPaymentIntentCookie($paymentIntentId = null, $expire = 0)
-    {
-        $this->app->input->cookie->set($this->intentIdKey, $paymentIntentId, $expire, '/', '', false, true);
-    }
-    
-    public function orderHistoryURL()
-    {
-        $db = Factory::getDBO();
-        $db->setQuery("select * from #__menu where link like '%com_hikashop&view=user&layout=cpanel%'");
-        $row = $db->loadObject();
-        if ($row->id) {
-            return JRoute::_('index.php?Itemid=' . $row->id);
-        } else {
-            return JRoute::_('index.php?option=com_hikashop&view=user&layout=cpanel');
-        }
-    }
+    // public function orderHistoryURL()
+    // {
+    //     $db = Factory::getDBO();
+    //     $db->setQuery("select * from #__menu where link like '%com_hikashop&view=user&layout=cpanel%'");
+    //     $row = $db->loadObject();
+    //     if ($row->id) {
+    //         return JRoute::_('index.php?Itemid=' . $row->id);
+    //     } else {
+    //         return JRoute::_('index.php?option=com_hikashop&view=user&layout=cpanel');
+    //     }
+    // }
 
     public function getPaymentDefaultValues(&$element)
     {
@@ -335,13 +308,15 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     private function getFormattedProducts()
     {
         $products_array = [];
-        // foreach ($this->cart->products as $product) {
-        //     $products_array[] = [
-        //         'ID' => $product->id,
-        //         'name' => $product->product_name,
-        //         'quantity' => $product->quantity,
-        //     ];
-        // }
+        $productsClass = hikashop_get('class.product');
+        foreach ($this->order->cart->cart_products as $item) {
+            $product = $productsClass->get($item->product_id);
+            $products_array[] = [
+                'ID' => $product->product_code,
+                'name' => $product->product_name,
+                'quantity' => $item->cart_product_quantity,
+            ];
+        }
         return $products_array;
     }
 
@@ -380,7 +355,8 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
      */
     protected function getConfig($key) 
     {
-        return $this->method->payment_params->{$key} ?? '';
+        // payment_params is set in parent::onAfterOrderConfirm
+        return $this->payment_params->{$key} ?? '';
     }
 
     /**
@@ -388,7 +364,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
      */
     protected function getPluginVersion() 
     {
-        $xmlStr = file_get_contents("$this->name.xml");
+        $xmlStr = file_get_contents(dirname(__FILE__) . "/$this->name.xml");
         $xmlObj = simplexml_load_string($xmlStr);
         return (string) $xmlObj->version;
     }
