@@ -189,7 +189,8 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 		$this->app->redirect($redirectUrl, 302);
     }
 
-    public function saveLunarTransaction()
+    /**  */
+    private function saveLunarTransaction()
     {
         $db = Factory::getDbo();
         $query = $db->getQuery(true);
@@ -244,30 +245,40 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         $cart = hikashop_get('class.cart');
         $cart->cleanCartFromSession();
 
-        if ('instant' === $this->getConfig('capture_mode')) {
-            if ($order->order_status != $this->getConfig('confirmed_status')) {
-                try {
-                    $apiResponse = $this->apiClient->payments()->capture($payment_intent_id, [
-                        'amount' => [
-                            'amount'   => (string) $order_full_price,
-                            'currency' => $this->currency->currency_code
-                        ]
-                    ]);
-                } catch (ApiException $e) {
-                    // silence for customers
-                    $this->writeToLog($e->getMessage());
-                }
-
-                if ('completed' === $apiResponse['captureStatus']) {
-                    $sql = "UPDATE #__lunar_transactions SET status='captured' WHERE order_id='".$order->order_id."'";
-                    $db->setQuery($sql)->execute();
-                }
-            }
-        }
+        $this->maybeCapturePayment($payment_intent_id);
 
         $completeUrl = hikashop_completeLink('checkout&task=after_end&order_id='.$order->order_id.$this->url_itemid);
 
         return $this->app->redirect($completeUrl);
+    }
+
+    /**  */
+    private function maybeCapturePayment($payment_intent_id)
+    {
+        if ('instant' !== $this->getConfig('capture_mode')) {
+            return;
+        }
+
+        if ($this->order->order_status != $this->getConfig('confirmed_status')) {
+            try {
+                $apiClient = new Lunar($this->getConfig('app_key'), null, $this->testMode);
+
+                $apiResponse = $apiClient->payments()->capture($payment_intent_id, [
+                    'amount' => [
+                        'currency' => $this->currency->currency_code,
+                        'decimal'   => (string) $this->order->order_full_price,
+                    ]
+                ]);
+            } catch (ApiException $e) {
+                // silence for customers
+                $this->writeToLog($e->getMessage());
+            }
+
+            if ('completed' === $apiResponse['captureStatus']) {
+                $sql = "UPDATE #__lunar_transactions SET status='captured' WHERE order_id='".$this->order->order_id."'";
+                Factory::getDbo()->setQuery($sql)->execute();
+            }
+        }
     }
 
     public function getPaymentDefaultValues(&$element)
