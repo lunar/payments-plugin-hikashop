@@ -93,7 +93,6 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
      */
     public function onPaymentNotification(&$statuses)
     {
-        $method = $this->app->input->get("method");
         $orderId = $this->app->input->get("order_id");
 
         $this->order = $dbOrder = $this->getOrder((int) $orderId);
@@ -157,8 +156,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             'redirectUrl' => JURI::root()
                             . '?option=com_hikashop&ctrl=checkout&task=notify'
                             . '&notif_payment=lunar&tmpl=component&lang=' . $this->locale
-                            . '&order_id=' . $this->order->order_id
-                            . '&method=' . $this->getConfig('payment_method'),
+                            . '&order_id=' . $this->order->order_id,
             'preferredPaymentMethod' => $this->getConfig('payment_method'),
         ];
 
@@ -199,7 +197,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             'transaction_id',
         );
 
-       $order_id = $this->order->order_id;
+        $order_id = $this->order->order_id;
         $order_full_price = $this->order->order_full_price;
         $payment_intent_id = $this->order->order_payment_params->{$this->intentIdKey} ?? null;
         $values = [
@@ -219,8 +217,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             ->columns($db->quoteName($columns))
             ->values(implode(',', $values));
 
-        $db->setQuery($query);
-        $db->execute();
+        $db->setQuery($query)->execute();
 
         $history = (object) [
             'notified' => 1,
@@ -243,32 +240,26 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 
         if ('instant' === $this->getConfig('capture_mode')) {
             if ($order->order_status != $this->getConfig('confirmed_status')) {
-                file_put_contents(dirname(__FILE__) . "/zzz.log", json_encode(__METHOD__.'-->'.__LINE__, JSON_PRETTY_PRINT) . PHP_EOL, FILE_APPEND);	
-                // try {
-                //     $apiResponse = $this->apiClient->payments()->capture($payment_intent_id, [
-                //         'amount' => [
-                //             'amount'   => (string) $order_full_price,
-                //             'currency' => $this->currency->currency_code
-                //         ]
-                //     ]);
-                // } catch (ApiException $e) {
-                //     $this->redirectBackWithNotification(JText::_('LUNAR_ERROR_CAPTURE_EXCEPTION'));
-                // }
+                try {
+                    $apiResponse = $this->apiClient->payments()->capture($payment_intent_id, [
+                        'amount' => [
+                            'amount'   => (string) $order_full_price,
+                            'currency' => $this->currency->currency_code
+                        ]
+                    ]);
+                } catch (ApiException $e) {
+                    // silence for customers
+                    $this->writeToLog($e->getMessage());
+                }
 
-                // if ('completed' === $apiResponse['captureStatus']) {
-                    // update status to capture
-                    // $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='captured' WHERE order_id='".$order->order_id."'";
-                    // $db->setQuery($sql);
-                    // $db->execute();
-                // }
+                if ('completed' === $apiResponse['captureStatus']) {
+                    $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='captured' WHERE order_id='".$order->order_id."'";
+                    $db->setQuery($sql)->execute();
+                }
             }
         }
 
-        // $checkoutHelper = hikashopCheckoutHelper::get();
-        // $cart = $checkoutHelper->getCart($reset);
-        // $completeUrl = $checkoutHelper->completeLink('cid='.($step + 1).$url_cart_param, false, true, false, $checkout_itemid);
-
-        $completeUrl = hikashop_completeLink('checkout&task=confirm&Itemid='.$order->order_id, false, true);
+        $completeUrl = hikashop_completeLink('checkout&task=after_end&order_id='.$order->order_id.$this->url_itemid);
 
         return $this->app->redirect($completeUrl);
     }
