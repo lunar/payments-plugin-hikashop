@@ -79,7 +79,7 @@ class plgHikashopLunarStatus extends JPlugin
             ]
         ]);
 
-        $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='captured',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+        $sql = "UPDATE #__lunar_transactions SET status='captured',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['captureState']) && 'completed' === $apiResponse['captureState']) {
             $this->db->setQuery($sql)->execute();
@@ -98,7 +98,7 @@ class plgHikashopLunarStatus extends JPlugin
             ]
         ]);
 
-        $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='refunded',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+        $sql = "UPDATE #__lunar_transactions SET status='refunded',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['refundState']) && 'completed' === $apiResponse['refundState']) {
             $this->db->setQuery($sql)->execute();
@@ -117,7 +117,7 @@ class plgHikashopLunarStatus extends JPlugin
             ]
         ]);
 
-        $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='voided',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+        $sql = "UPDATE #__lunar_transactions SET status='voided',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['cancelState']) && 'completed' === $apiResponse['cancelState']) {
             $this->db->setQuery($sql)->execute();
@@ -129,7 +129,7 @@ class plgHikashopLunarStatus extends JPlugin
      */
     private function getLunarTransaction()
     {
-        $sql = "SELECT * FROM #__hikashop_payment_plg_lunar WHERE order_id='".$this->order->order_id."' LIMIT 1";
+        $sql = "SELECT * FROM #__lunar_transactions WHERE order_id='".$this->order->order_id."' LIMIT 1";
         $this->db->setQuery($sql);
         return $this->db->loadObject();
     }

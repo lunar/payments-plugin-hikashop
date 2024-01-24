@@ -219,7 +219,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         ];
 
         $query
-            ->insert($db->quoteName('#__hikashop_payment_plg_lunar'))
+            ->insert($db->quoteName('#__lunar_transactions'))
             ->columns($db->quoteName($columns))
             ->values(implode(',', $values));
 
@@ -259,7 +259,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
                 }
 
                 if ('completed' === $apiResponse['captureStatus']) {
-                    $sql = "UPDATE #__hikashop_payment_plg_lunar SET status='captured' WHERE order_id='".$order->order_id."'";
+                    $sql = "UPDATE #__lunar_transactions SET status='captured' WHERE order_id='".$order->order_id."'";
                     $db->setQuery($sql)->execute();
                 }
             }
