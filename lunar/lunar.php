@@ -67,7 +67,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         // $this->order is set on parent, so we use it instead of $order passed here
         
         $price = round(
-            $this->order->cart->full_total->prices[0]->price_value_with_tax,
+            $this->order->order_full_price,
             (int) $this->currency->currency_locale['int_frac_digits']
         );
         $this->totalAmount = (string) $price;
@@ -198,11 +198,10 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             'order_number',
             'paymentmethod_id',
             'payment_name',
-            'payment_method',
             'amount',
-            'status',
             'currency_code',
             'transaction_id',
+            'created_by',
         );
 
         $order_id = $this->order->order_id;
@@ -212,12 +211,11 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
             $db->quote($order_id),
             $db->quote($this->order->order_number),
             $db->quote($this->plugin_data->payment_id),
-            $db->quote($this->plugin_data->payment_name),
             $db->quote($this->getConfig('payment_method')),
             $db->quote($order_full_price),
-            $db->quote('created'),
             $db->quote(unserialize($this->order->order_currency_info)->currency_code),
             $db->quote($payment_intent_id),
+            $db->quote($this->user->id),
         ];
 
         $query
@@ -274,7 +272,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
 
     public function getPaymentDefaultValues(&$element)
     {
-        $element->payment_description = Text::_('LUNAR_DESCRIPTION');
+        $element->payment_description = JText::_('LUNAR_DESCRIPTION');
         $element->payment_images = 'VISA,MAESTRO,MASTERCARD';
         $element->payment_params->payment_method = 'card';
         $element->payment_params->capture_mode = 'delayed';
