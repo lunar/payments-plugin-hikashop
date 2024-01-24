@@ -5,6 +5,8 @@ defined('_JEXEC') or die('Restricted access');
 include_once('vendor/autoload.php');
 
 use Joomla\CMS\Factory;
+use Joomla\CMS\Language\Text;
+use Joomla\CMS\Router\Route;
 use Joomla\CMS\Version;
 
 use Lunar\Lunar;
@@ -62,17 +64,26 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     {
         parent::onAfterOrderConfirm($order, $methods, $method_id);
 
+        // $this->order is set on parent, so we use it instead of $order passed here
+        
         $price = round(
             $this->order->cart->full_total->prices[0]->price_value_with_tax,
             (int) $this->currency->currency_locale['int_frac_digits']
         );
         $this->totalAmount = (string) $price;
         $this->currencyCode = $this->currency->currency_code;
+        $this->isMobilePay = $this->getConfig('payment_method') === self::MOBILEPAY_METHOD;
+
+        $this->apiClient = new Lunar($this->getConfig('app_key'), null, $this->testMode);
 
         $this->setArgs($this->order);
 
-        $this->apiClient = new Lunar($this->getConfig('app_key'), null, $this->testMode);
-        $paymentIntentId = $this->apiClient->payments()->create($this->args);
+        try {
+            $paymentIntentId = $this->apiClient->payments()->create($this->args);
+        } catch (ApiException $e) {
+            $this->writeToLog('LUNAR EXCEPTION (create intent): ' . $e->getMessage());
+            $this->redirectBackWithNotification($e->getMessage());
+        }
 
         $this->modifyOrder(
             $this->order->order_id,
@@ -84,8 +95,6 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         );
         
         $this->app->redirect(($this->testMode ? self::TEST_REMOTE_URL : self::REMOTE_URL) . $paymentIntentId, 302);
-
-        //$order_history = $this->orderHistoryURL(), // $this->getOrderUrl();
     }
 
     /**
@@ -153,8 +162,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
                 ],
                 'lunarPluginVersion' => $this->getPluginVersion(),
             ],
-            'redirectUrl' => JURI::root()
-                            . '?option=com_hikashop&ctrl=checkout&task=notify'
+            'redirectUrl' => JURI::root() . '?option=com_hikashop&ctrl=checkout&task=notify'
                             . '&notif_payment=lunar&tmpl=component&lang=' . $this->locale
                             . '&order_id=' . $this->order->order_id,
             'preferredPaymentMethod' => $this->getConfig('payment_method'),
@@ -175,7 +183,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     /** */
     private function redirectBackWithNotification($errorMessage, $redirectUrl = null)
     {
-		$redirectUrl = $redirectUrl ?? Route::_('index.php?checkout');
+		$redirectUrl = $redirectUrl ?? Route::_('index.php?option=com_hikashop&ctrl=checkout');
 
 		$this->app->enqueueMessage($errorMessage, 'error');
 		$this->app->redirect($redirectUrl, 302);
@@ -264,21 +272,10 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         return $this->app->redirect($completeUrl);
     }
 
-    // public function orderHistoryURL()
-    // {
-    //     $db = Factory::getDBO();
-    //     $db->setQuery("select * from #__menu where link like '%com_hikashop&view=user&layout=cpanel%'");
-    //     $row = $db->loadObject();
-    //     if ($row->id) {
-    //         return JRoute::_('index.php?Itemid=' . $row->id);
-    //     } else {
-    //         return JRoute::_('index.php?option=com_hikashop&view=user&layout=cpanel');
-    //     }
-    // }
-
     public function getPaymentDefaultValues(&$element)
     {
-        $element->payment_images = 'VISA,MASTERCARD';
+        $element->payment_description = Text::_('LUNAR_DESCRIPTION');
+        $element->payment_images = 'VISA,MAESTRO,MASTERCARD';
         $element->payment_params->payment_method = 'card';
         $element->payment_params->capture_mode = 'delayed';
         $element->payment_params->order_status = 'pending';
