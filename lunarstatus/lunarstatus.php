@@ -17,6 +17,7 @@ class plgHikashopLunarStatus extends JPlugin
     private $db;
     private $user;
     private $order;
+    private $transaction_id;
     private $apiClient;
     private $error = null;
 
@@ -42,15 +43,24 @@ class plgHikashopLunarStatus extends JPlugin
     
             $this->setApiClient($row->paymentmethod_id); // or $order->order_payment_id
 
+            $this->transaction_id = $row->transaction_id;
+
+            $data = [
+                'amount' => [
+                    'currency' => $row->currency_code,
+                    'decimal' => $row->amount,
+                ]
+            ];
+
             try {
                 if ($order->old->order_status != $order->order_status && $order->order_status == "shipped") {
-                    $this->captureTransaction($row);
+                    $this->captureTransaction($data);
                 }
                 if ($order->old->order_status != $order->order_status && $order->order_status == "refunded") {
                     if ('captured' == $row->status) {
-                        $this->refundTransaction($row);
+                        $this->refundTransaction($data);
                     } else {
-                        $this->voidTransaction($row);
+                        $this->voidTransaction($data);
                     }
                 }
             } catch (ApiException $e) {
@@ -70,14 +80,9 @@ class plgHikashopLunarStatus extends JPlugin
     /**
      * 
      */
-    private function captureTransaction($row)
+    private function captureTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->capture($row->transaction_id, [
-            'amount' => [
-                'currency' => $row->currency_code,
-                'decimal' => $row->amount,
-            ]
-        ]);
+        $apiResponse = $this->apiClient->payments()->capture($this->transaction_id, $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='captured',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
@@ -89,14 +94,9 @@ class plgHikashopLunarStatus extends JPlugin
     /**
      * 
      */
-    private function refundTransaction($row)
+    private function refundTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->refund($row->transaction_id, [
-            'amount' => [
-                'currency' => $row->currency_code,
-                'decimal' => $row->amount,
-            ]
-        ]);
+        $apiResponse = $this->apiClient->payments()->refund($this->transaction_id, $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='refunded',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
@@ -108,14 +108,9 @@ class plgHikashopLunarStatus extends JPlugin
     /**
      * 
      */
-    private function voidTransaction($row)
+    private function voidTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->cancel($row->transaction_id, [
-            'amount' => [
-                'currency' => $row->currency_code,
-                'decimal' => $row->amount,
-            ]
-        ]);
+        $apiResponse = $this->apiClient->payments()->cancel($this->transaction_id, $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='voided',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 

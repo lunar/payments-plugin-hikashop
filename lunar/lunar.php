@@ -284,7 +284,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
     public function getPaymentDefaultValues(&$element)
     {
         $element->payment_description = JText::_('LUNAR_DESCRIPTION');
-        $element->payment_images = 'VISA,MAESTRO,MASTERCARD';
+        $element->payment_images = 'VISA,MASTERCARD';
         $element->payment_params->payment_method = 'card';
         $element->payment_params->capture_mode = 'delayed';
         $element->payment_params->order_status = 'pending';
