@@ -1,138 +1,186 @@
 <?php
-/**
- * @package	Lunar Status Plugin for Hikashop
- * @author	lunar.app
- * @copyright (C) 2022-2022 Lunar. All rights reserved.
- * @license	GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
- */
+
 defined('_JEXEC') or die('Restricted access');
 
-include_once( JPATH_SITE.DS.'plugins/hikashoppayment/lunar/Lunar/Client.php' );
+include_once(JPATH_SITE . DS . 'plugins/hikashoppayment/lunar/vendor/autoload.php');
 
+use Joomla\CMS\Factory;
+
+use Lunar\Lunar;
+use Lunar\Exception\ApiException;
+
+/**
+ * 
+ */
 class plgHikashopLunarStatus extends JPlugin
 {
-	var $message = '';
-
-	function __construct(&$subject, $config){
-		parent::__construct($subject, $config);
-		$this->order = hikashop_get('class.order');
-		$this->db = JFactory::getDBO();
-	}
+    private $db;
+    private $user;
+    private $order;
+    private $apiClient;
+    private $error = null;
 
 
-	function onAfterOrderUpdate(&$order,&$send_email){
+    public function __construct(&$subject, $config)
+    {
+        parent::__construct($subject, $config);
 
-		$db = JFactory::getDbo();
+        $this->db = Factory::getDbo();
+        $this->user = Factory::getUser();
+    }
 
-		$o = clone $order;
-		if(!empty($order->old)) {
-			if($order->old->order_status!=$order->order_status && $order->order_status=="refunded")
-			{
-				$this->lunarRefunded($order);
+    /**
+     * 
+     */
+    public function onBeforeOrderUpdate(&$order, &$do)
+    {
+        $this->order = $order;
+
+        if (!empty($order->old)) {
+            if (! $row = $this->getLunarTransaction()) {
+                return;
+            }
+    
+            $this->setApiClient($row->paymentmethod_id); // or $order->order_payment_id
+
+            $data = [
+                'id' => $row->transaction_id,
+                'amount' => [
+                    'currency' => $row->currency_code,
+                    'decimal' => (string) $row->amount,
+                ]
+            ];
+
+            try {
+                if ($order->old->order_status != $order->order_status && $order->order_status == "shipped") {
+                    if ('created' == $row->status) {
+                        $apiResponse = $this->captureTransaction($data);
+                    }
+                }
+                if ($order->old->order_status != $order->order_status && $order->order_status == "refunded") {
+                    if ('captured' == $row->status) {
+                        $apiResponse = $this->refundTransaction($data);
+                    }
+                    if ('created' == $row->status) {
+                        $apiResponse = $this->voidTransaction($data);
+                    }
+                }
+            } catch (ApiException $e) {
+                $this->error = $e->getMessage();
+            } catch (Exception $e) {
+                $this->error = $e->getMessage();
+            }
+        }
+
+        if (! isset($apiResponse)) {
+            $this->error = $this->getResponseError($apiResponse);
+        }
+
+        if ($this->error) {
+            hikaInput::get()->set('fail', 1);
+            Factory::getApplication()->enqueueMessage($this->error, 'error');
+            $do = false;
+        }
+
+    }
+
+    /**
+     * 
+     */
+    private function captureTransaction($data)
+    {
+        $apiResponse = $this->apiClient->payments()->capture($data['id'], $data);
+
+        $sql = "UPDATE #__lunar_transactions SET status='captured',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+
+        if (isset($apiResponse['captureState']) && 'completed' === $apiResponse['captureState']) {
+            $this->db->setQuery($sql)->execute();
+            return $apiResponse;
+        }
+    }
+
+    /**
+     * 
+     */
+    private function refundTransaction($data)
+    {
+        $apiResponse = $this->apiClient->payments()->refund($data['id'], $data);
+
+        $sql = "UPDATE #__lunar_transactions SET status='refunded',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+
+        if (isset($apiResponse['refundState']) && 'completed' === $apiResponse['refundState']) {
+            $this->db->setQuery($sql)->execute();
+            return $apiResponse;
+        }
+    }
+
+    /**
+     * 
+     */
+    private function voidTransaction($data)
+    {
+        $apiResponse = $this->apiClient->payments()->cancel($data['id'], $data);
+
+        $sql = "UPDATE #__lunar_transactions SET status='voided',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
+
+        if (isset($apiResponse['cancelState']) && 'completed' === $apiResponse['cancelState']) {
+            $this->db->setQuery($sql)->execute();
+            return $apiResponse;
+        }
+    }
+
+    /**
+     * 
+     */
+    private function getLunarTransaction()
+    {
+        $sql = "SELECT * FROM #__lunar_transactions WHERE order_id='".$this->order->order_id."' LIMIT 1";
+        $this->db->setQuery($sql);
+        return $this->db->loadObject();
+    }
+
+    /**
+     * 
+     */
+    private function setApiClient($method_id)
+    {
+        $this->db->setQuery("SELECT * FROM #__hikashop_payment WHERE payment_id=" . (int)$method_id);
+        $paymentParams = hikashop_unserialize($this->db->loadObject()->payment_params);
+
+        $this->apiClient = new Lunar($paymentParams->app_key, null, !! $_COOKIE['lunar_testmode']);
+    }
+
+    /**
+     * Gets errors from a failed api request
+     * @param array $result The result returned by the api wrapper.
+     */
+    private function getResponseError($result)
+    {
+        $error = [];
+        // if this is just one error
+        if (isset($result['text'])) {
+            return $result['text'];
+        }
+
+        if (isset($result['code']) && isset($result['error'])) {
+            return $result['code'] . '-' . $result['error'];
+        }
+
+        // otherwise this is a multi field error
+        if ($result) {
+			if (isset($result['declinedReason'])) {
+				return $result['declinedReason']['error'];
 			}
-			if($order->old->order_status!=$order->order_status && $order->order_status=="shipped")
-			{
-				$this->lunarCaptured($order);
-			}
-		}
-	}
 
-	function lunarRefunded($order) {
+            foreach ($result as $fieldError) {
+				if (isset($fieldError['field']) && isset($fieldError['message'])) {
+					$error[] = $fieldError['field'] . ':' . $fieldError['message'];
+				} else {
+					$error = $fieldError;
+				}
+            }
+        }
 
-		$db = JFactory::getDbo();
-
-		$sql ="select * from #__hikashop_payment_plg_lunar where order_id='$order->order_id' limit 1";
-		$db->setQuery($sql);
-		$row = $db->loadObject();
-
-		$txtid = $row->txnid;
-
-		$params = $this->getLunarConfig();
-
-
-		\Lunar\Client::setKey( $params->private_key );
-
-		$response    = \Lunar\Transaction::fetch( $txtid );
-
-		/* refund payment if already captured */
-		if ( $response['transaction']['capturedAmount'] > 0 ) {
-				$amount   = $response['transaction']['capturedAmount'];
-				$data     = array(
-					'amount'     => $amount,
-					'descriptor' => ""
-				);
-				$response = \Lunar\Transaction::refund( $txtid, $data );
-				// update payment to refunded
-				$sql ="update #__hikashop_payment_plg_lunar set status='refunded' where order_id='$order->order_id'";
-		} else {
-				/* void payment if not already captured */
-				$data     = array(
-					'amount' => $response['transaction']['amount']
-				);
-				$response = \Lunar\Transaction::void( $txtid, $data );
-				// update payment to voided
-				$sql ="update #__hikashop_payment_plg_lunar set status='voided' where order_id='$order->order_id'";
-		}
-
-		$db->setQuery( $sql );
-		$db->execute();
-
-	}
-
-	function lunarCaptured($order) {
-
-		$db = JFactory::getDbo();
-
-		$sql ="select * from #__hikashop_payment_plg_lunar where order_id='$order->order_id' limit 1";
-		$db->setQuery($sql);
-		$row = $db->loadObject();
-
-		$txtid = $row->txnid;
-
-		$params = $this->getLunarConfig();
-
-
-		\Lunar\Client::setKey( $params->private_key );
-
-		$response    = \Lunar\Transaction::fetch( $txtid );
-
-
-
-		/* refund payment if already captured */
-		if ( $response['transaction']['capturedAmount'] > 0 ) {
-				// already captured
-		} else {
-			$data        = array(
-				'amount'   => get_lunar_amount( $row->amount, $row->mode),
-				'currency' => $row->mode
-			);
-			\Lunar\Client::setKey( $params->private_key );
-			$response = \Lunar\Transaction::capture( $txtid, $data );
-
-			if($response['transaction']['capturedAmount'] > 0):
-				$sql ="update #__hikashop_payment_plg_lunar set status='captured' where order_id='$order->order_id'";
-				$db->setQuery( $sql );
-				$db->execute();
-			endif;
-		}
-
-
-	}
-
-	function getLunarConfig() {
-
-		$db = JFactory::getDbo();
-
-		$db->setQuery("select * from #__hikashop_payment where payment_type='lunar' ");
-		$row = $db->loadObject();
-
-		$params = hikashop_unserialize($row->payment_params);
-
-		return $params;
-
-
-	}
-
-
-
+        return implode(' ', $error);
+    }
 }

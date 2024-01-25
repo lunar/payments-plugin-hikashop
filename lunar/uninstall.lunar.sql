@@ -1,1 +1,1 @@
-DROP TABLE `#__hikashop_payment_plg_lunar`;
+DROP TABLE `#__lunar_transactions`;

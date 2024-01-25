@@ -4,37 +4,27 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit3aaff7c34e8808af15b749584a418fda
+class ComposerStaticInit15ac80d9eec6bcbbcbdcec5f1b390a9f
 {
     public static $prefixLengthsPsr4 = array (
-        'P' => 
+        'L' => 
         array (
-            'Paylike\\Tests\\' => 14,
-            'Paylike\\' => 8,
+            'Lunar\\' => 6,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
-        'Paylike\\Tests\\' => 
+        'Lunar\\' => 
         array (
-            0 => __DIR__ . '/..' . '/paylike/php-api/tests',
+            0 => __DIR__ . '/..' . '/lunar/payments-api-sdk/src',
         ),
-        'Paylike\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/paylike/php-api/src',
-        ),
-    );
-
-    public static $classMap = array (
-        'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit3aaff7c34e8808af15b749584a418fda::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit3aaff7c34e8808af15b749584a418fda::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit3aaff7c34e8808af15b749584a418fda::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit15ac80d9eec6bcbbcbdcec5f1b390a9f::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit15ac80d9eec6bcbbcbdcec5f1b390a9f::$prefixDirsPsr4;
 
         }, null, ClassLoader::class);
     }

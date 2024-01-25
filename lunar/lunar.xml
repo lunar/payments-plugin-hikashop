@@ -2,25 +2,22 @@
 <extension type="plugin" version="2.5" method="upgrade" group="hikashoppayment">
 	<name>Hikashop Lunar Payment Plugin</name>
 	<creationDate>19 April 2022</creationDate>
-	<version>1.0.0</version>
+	<version>2.0.0</version>
 	<author>Lunar</author>
 	<authorEmail>support@lunar.app</authorEmail>
 	<authorUrl>https://lunar.app</authorUrl>
-	<copyright>(C) 2022-2022 Lunar. All rights reserved.</copyright>
-	<license>http://www.gnu.org/licenses/gpl-2.0.html GNU/GPL</license>
+	<copyright>© Lunar. All rights reserved.</copyright>
+	<license>MIT</license>
 	<description>This plugin enables you to setup your Check payment system</description>
 	<files>
 		<filename plugin="lunar">lunar.php</filename>
 		<filename>index.html</filename>
 		<filename>lunar_configuration.php</filename>
-		<filename>lunar_end.php</filename>
 		<filename>lunar.sql</filename>
 		<filename>uninstall.lunar.sql</filename>
 		<filename>composer.lock</filename>
 		<filename>composer.json</filename>
-		<folder>Lunar</folder>
 		<folder>vendor</folder>
-		<folder>helpers</folder>
 	</files>
 	<install>
 		<sql>

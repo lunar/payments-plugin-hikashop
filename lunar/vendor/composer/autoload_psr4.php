@@ -6,6 +6,5 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
-    'Paylike\\Tests\\' => array($vendorDir . '/paylike/php-api/tests'),
-    'Paylike\\' => array($vendorDir . '/paylike/php-api/src'),
+    'Lunar\\' => array($vendorDir . '/lunar/payments-api-sdk/src'),
 );
