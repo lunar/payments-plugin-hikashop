@@ -260,6 +260,15 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
         }
 
         if ($this->order->order_status != $this->getConfig('confirmed_status')) {
+            
+            // @TODO we can take the following approach to use lunarstatus flow, but we'll see if it's the case
+            // $history = (object) [
+            //     'notified' => 0,
+            //     'amount' => $this->order->order_full_price,
+            //     'data' => ob_get_clean(),
+            // ];
+            // $this->modifyOrder($this->order->order_id, 'shipped', $history);
+
             try {
                 $apiClient = new Lunar($this->getConfig('app_key'), null, $this->testMode);
 
@@ -274,7 +283,7 @@ class plgHikashoppaymentLunar extends hikashopPaymentPlugin
                 $this->writeToLog($e->getMessage());
             }
 
-            if ('completed' === $apiResponse['captureStatus']) {
+            if ('completed' === $apiResponse['captureState']) {
                 $sql = "UPDATE #__lunar_transactions SET status='captured' WHERE order_id='".$this->order->order_id."'";
                 Factory::getDbo()->setQuery($sql)->execute();
             }
