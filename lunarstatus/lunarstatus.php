@@ -17,9 +17,9 @@ class plgHikashopLunarStatus extends JPlugin
     private $db;
     private $user;
     private $order;
-    private $transaction_id;
     private $apiClient;
     private $error = null;
+
 
     public function __construct(&$subject, $config)
     {
@@ -43,24 +43,26 @@ class plgHikashopLunarStatus extends JPlugin
     
             $this->setApiClient($row->paymentmethod_id); // or $order->order_payment_id
 
-            $this->transaction_id = $row->transaction_id;
-
             $data = [
+                'id' => $row->transaction_id,
                 'amount' => [
                     'currency' => $row->currency_code,
-                    'decimal' => $row->amount,
+                    'decimal' => (string) $row->amount,
                 ]
             ];
 
             try {
                 if ($order->old->order_status != $order->order_status && $order->order_status == "shipped") {
-                    $this->captureTransaction($data);
+                    if ('created' == $row->status) {
+                        $apiResponse = $this->captureTransaction($data);
+                    }
                 }
                 if ($order->old->order_status != $order->order_status && $order->order_status == "refunded") {
                     if ('captured' == $row->status) {
-                        $this->refundTransaction($data);
-                    } else {
-                        $this->voidTransaction($data);
+                        $apiResponse = $this->refundTransaction($data);
+                    }
+                    if ('created' == $row->status) {
+                        $apiResponse = $this->voidTransaction($data);
                     }
                 }
             } catch (ApiException $e) {
@@ -70,11 +72,16 @@ class plgHikashopLunarStatus extends JPlugin
             }
         }
 
+        if (! isset($apiResponse)) {
+            $this->error = $this->getResponseError($apiResponse);
+        }
+
         if ($this->error) {
             hikaInput::get()->set('fail', 1);
             Factory::getApplication()->enqueueMessage($this->error, 'error');
             $do = false;
         }
+
     }
 
     /**
@@ -82,12 +89,13 @@ class plgHikashopLunarStatus extends JPlugin
      */
     private function captureTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->capture($this->transaction_id, $data);
+        $apiResponse = $this->apiClient->payments()->capture($data['id'], $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='captured',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['captureState']) && 'completed' === $apiResponse['captureState']) {
             $this->db->setQuery($sql)->execute();
+            return $apiResponse;
         }
     }
 
@@ -96,12 +104,13 @@ class plgHikashopLunarStatus extends JPlugin
      */
     private function refundTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->refund($this->transaction_id, $data);
+        $apiResponse = $this->apiClient->payments()->refund($data['id'], $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='refunded',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['refundState']) && 'completed' === $apiResponse['refundState']) {
             $this->db->setQuery($sql)->execute();
+            return $apiResponse;
         }
     }
 
@@ -110,12 +119,13 @@ class plgHikashopLunarStatus extends JPlugin
      */
     private function voidTransaction($data)
     {
-        $apiResponse = $this->apiClient->payments()->cancel($this->transaction_id, $data);
+        $apiResponse = $this->apiClient->payments()->cancel($data['id'], $data);
 
         $sql = "UPDATE #__lunar_transactions SET status='voided',modified_by=".$this->user->id." WHERE order_id='".$this->order->order_id."'";
 
         if (isset($apiResponse['cancelState']) && 'completed' === $apiResponse['cancelState']) {
             $this->db->setQuery($sql)->execute();
+            return $apiResponse;
         }
     }
 
@@ -138,5 +148,39 @@ class plgHikashopLunarStatus extends JPlugin
         $paymentParams = hikashop_unserialize($this->db->loadObject()->payment_params);
 
         $this->apiClient = new Lunar($paymentParams->app_key, null, !! $_COOKIE['lunar_testmode']);
+    }
+
+    /**
+     * Gets errors from a failed api request
+     * @param array $result The result returned by the api wrapper.
+     */
+    private function getResponseError($result)
+    {
+        $error = [];
+        // if this is just one error
+        if (isset($result['text'])) {
+            return $result['text'];
+        }
+
+        if (isset($result['code']) && isset($result['error'])) {
+            return $result['code'] . '-' . $result['error'];
+        }
+
+        // otherwise this is a multi field error
+        if ($result) {
+			if (isset($result['declinedReason'])) {
+				return $result['declinedReason']['error'];
+			}
+
+            foreach ($result as $fieldError) {
+				if (isset($fieldError['field']) && isset($fieldError['message'])) {
+					$error[] = $fieldError['field'] . ':' . $fieldError['message'];
+				} else {
+					$error = $fieldError;
+				}
+            }
+        }
+
+        return implode(' ', $error);
     }
 }
