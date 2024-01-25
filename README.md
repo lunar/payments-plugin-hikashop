@@ -8,8 +8,8 @@ The software is provided “as is”, without warranty of any kind, express or i
 
 ## Note for version 2.0.0
    1. Before installing the new version, make sure you have processed all orders paid through "Lunar".
-   1. Please keep in mind that orders not processed by the old "Monthly" method will no longer be able to be processed by the new method.
-   1. It will be necessary to check and adjust the settings for the "Monthly" payment method if you have such a method already created.
+   1. Please keep in mind that orders not processed by the old "Lunar" method will no longer be able to be processed by the new method.
+   1. It will be necessary to check and adjust the settings for the "Lunar" payment method if you have such a method already created.
 
 ## Installation
 
