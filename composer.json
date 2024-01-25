@@ -1,0 +1,11 @@
+{
+  "name": "lunar/payments-plugin-hikashop",
+  "description": "Lunar Online Payments for HikaShop",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Lunar",
+      "email": "support@lunar.app"
+    }
+  ]
+}
