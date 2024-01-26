@@ -2,7 +2,7 @@
 <extension type="plugin" version="2.5" method="upgrade" group="hikashop">
     <name>Hikashop Lunar Status Plugin</name>
     <creationDate>19 April 2022</creationDate>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
     <author>Lunar</author>
     <authorEmail>support@lunar.app</authorEmail>
     <authorUrl>https://lunar.app</authorUrl>

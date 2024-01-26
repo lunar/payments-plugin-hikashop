@@ -72,7 +72,7 @@ class plgHikashopLunarStatus extends JPlugin
             }
         }
 
-        if (! isset($apiResponse)) {
+        if (isset($apiResponse) && true !== $apiResponse) {
             $this->error = $this->getResponseError($apiResponse);
         }
 
@@ -95,8 +95,10 @@ class plgHikashopLunarStatus extends JPlugin
 
         if (isset($apiResponse['captureState']) && 'completed' === $apiResponse['captureState']) {
             $this->db->setQuery($sql)->execute();
-            return $apiResponse;
+            return true;
         }
+
+        return $apiResponse;
     }
 
     /**
@@ -110,8 +112,10 @@ class plgHikashopLunarStatus extends JPlugin
 
         if (isset($apiResponse['refundState']) && 'completed' === $apiResponse['refundState']) {
             $this->db->setQuery($sql)->execute();
-            return $apiResponse;
+            return true;
         }
+
+        return $apiResponse;
     }
 
     /**
@@ -125,8 +129,10 @@ class plgHikashopLunarStatus extends JPlugin
 
         if (isset($apiResponse['cancelState']) && 'completed' === $apiResponse['cancelState']) {
             $this->db->setQuery($sql)->execute();
-            return $apiResponse;
+            return true;
         }
+
+        return $apiResponse;
     }
 
     /**

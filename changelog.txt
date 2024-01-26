@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## 2.0.1 - 2024-01-26
+- Fixed lunarstatus get the api error
+
 ## 2.0.0 - 2024-01-24
 - Changed payment flow to hosted checkout & added mobilepay method
 

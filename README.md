@@ -6,7 +6,7 @@ The software is provided “as is”, without warranty of any kind, express or i
 ## Supported HikaShop versions
 *The plugin has been tested with most versions of HikaShop at every iteration. We recommend using the latest version of HikaShop, but if that is not possible for some reason, test the plugin with your HikaShop version and it would probably function properly.*
 
-## Note for version 2.0.0
+## Note for version 2*
    1. Before installing the new version, make sure you have processed all orders paid through "Lunar".
    1. Please keep in mind that orders not processed by the old "Lunar" method will no longer be able to be processed by the new method.
    1. It will be necessary to check and adjust the settings for the "Lunar" payment method if you have such a method already created.
